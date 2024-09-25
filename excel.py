@@ -192,4 +192,4 @@ if __name__ == "__main__":
 
     # pair_students_into_sheet("Lab 4")
 
-    check_duplicates(EXCEL_FILE, ["Lab 1", "Lab 2", "Lab 3", "Lab 4"])
+    # check_duplicates(EXCEL_FILE, ["Lab 1", "Lab 2", "Lab 3", "Lab 4"])
