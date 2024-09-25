@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
-from color_print import color, print_blue
-import sys
+from color_print import color, print_blue, print_red
+import click
 
-EXCEL_FILE = "students.xlsx"
+EXCEL_FILE = "students_list.xlsx"
 STUDENT_NAMES_SHEET = "Names"
-RAW_DATA_SHEET = "full_list"
+RAW_DATA_SHEET = "Raw"
 
 def write_to_sheet(data:any, filename:str, sheet_name:str, columns:list[str]):
     """
@@ -32,7 +32,7 @@ def write_to_sheet(data:any, filename:str, sheet_name:str, columns:list[str]):
     with pd.ExcelWriter(filename, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
         df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-    print_blue(f"Successfully wrote [{', '.join(columns)}] columns to the {sheet_name} sheet in {filename}")
+    print_blue(f"Successfully wrote [{', '.join(columns)}] column(s) to the {sheet_name} sheet in {filename}")
 
 def reformat_names(filename:str, sheet_name:str, num_students:int) -> list[str]:
     """
@@ -64,8 +64,9 @@ def reformat_names(filename:str, sheet_name:str, num_students:int) -> list[str]:
         names[i] = newname
     
     # Validation
+    print_blue("Checking expected number of students...")
     if len(names) != num_students:
-        raise ValueError(color("Number of students incorrect", "RED"))
+        raise ValueError("Number of students does not match")
     else:
         print_blue("Number of students is correct")
 
@@ -104,7 +105,7 @@ def random_pairings(names:np.array) -> np.ndarray:
     print_blue("Shuffling names in a random order...")
     np.random.shuffle(names)
 
-    print_blue("Splitting it into pairs...")
+    print_blue("Splitting the list of shuffled names into pairs...")
     pairings = names.reshape(-1, 2)
 
     return pairings
@@ -124,10 +125,13 @@ def check_duplicates(filename:str, sheet_list:list[str]):
     for i in data:
         data[i] = data[i].fillna("")
 
+
+    if len(sheet_list) < 2:
+        raise ValueError("There must be at least two sheets to compare")
+
     for sheet in sheet_list:
         if sheet not in list(data.keys()):
-            print(color(f"Invalid sheet name! {sheet} is not a sheet in the excel file", "RED"))
-            return
+            raise NameError(f"Invalid sheet name! {sheet} is not a sheet in the excel file", "RED")
 
     for i in range(len(sheet_list)):
         for j in range(i+1, len(sheet_list)):
@@ -147,49 +151,146 @@ def check_duplicates(filename:str, sheet_list:list[str]):
             common_pairs = [tuple(s) for s in lab1_pairs_set if s in lab2_pairs_set]
 
             if len(common_pairs) == 0:
-                print(color(f"No common pairs found!\t\t[{sheet_list[i]}, {sheet_list[j]}]", "GREEN"))
+                print(color(f"[{sheet_list[i]}, {sheet_list[j]}]\t\tNo common pairs found", "GREEN"))
             else:
-                print(color(f"Common pairs found \t\t[{sheet_list[i]}, {sheet_list[j]}]:", "RED"))
+                print(color(f"[{sheet_list[i]}, {sheet_list[j]}]\t\tCommon pairs found \t\t", "RED"))
                 for c in common_pairs:
                     print(c)
     
     print()
 
-def print_sheet_names(filename:str):
+### CLI RELATED STUFF ###
+
+@click.group()
+def cli():
     """
-    Given an excel filename, prints the list of sheets in the file
-    
-    Args:
-        filename:
-            Name of the excel file
+    Utility to manage student names and grouping into random pairs for labs.
+
+    Meant to take in raw data from canvas and do everything else through this script.
     """
+
+@cli.command(help="Format and save names in a new sheet")
+@click.option(
+    "--file", "-f",
+    prompt="(--file, -f)\tEnter the excel file name",
+    type=str,
+    help=f"""\b
+    Name of the file containing student info. 
+    Default: {EXCEL_FILE}
+    """,
+    default=f"{EXCEL_FILE}",
+    required=True
+)
+@click.option(
+    "--raw", "-r",
+    prompt="(--raw, -r)\tEnter the sheet containing raw data",
+    type=str,
+    help=f"""\b
+    Name of sheet containing raw data. 
+    Default: {RAW_DATA_SHEET}
+    """,
+    default=f"{RAW_DATA_SHEET}"
+)
+@click.option(
+    "--output", "-o",
+    prompt="(--output, -o)\tEnter the name of the sheet to write the names to",
+    type=str,
+    help="Name of the sheet to write the formatted names to",
+    default=f"{STUDENT_NAMES_SHEET}"
+)
+@click.option(
+    "--num", "-n",
+    prompt="(--num, -n)\tEnter the number of students",
+    type=int,
+    help="Expected number of students, for validation purposes",
+    required=True
+)
+def names(file, raw, output, num):
+    formatted_names = reformat_names(filename=file, sheet_name=raw, num_students=num)
+    write_to_sheet(data=formatted_names, filename=file, sheet_name=output, columns=[f"{output}"])
+
+
+@cli.command(help="Pair students up randomly and save in a new sheet")
+@click.option(
+    "--file", "-f",
+    prompt="(--file, -f)\tEnter the excel file name",
+    type=str,
+    help=f"""\b
+    Name of the file containing student info. 
+    Default: {EXCEL_FILE}
+    """,
+    default=f"{EXCEL_FILE}",
+    required=True
+)
+@click.option(
+    "--names", "-n",
+    prompt="(--names, -n)\tEnter the name of the sheet with formatted names",
+    type=str,
+    help=f"""\b
+    Name of the sheet containing formatted student names. 
+    Default: {STUDENT_NAMES_SHEET}
+    """,
+    default=f"{STUDENT_NAMES_SHEET}"
+)
+@click.option(
+    "--output", "-o",
+    prompt="(--output, -o)\tEnter the sheet to save the pairing in",
+    help="The sheet to save the pairing in",
+    required=True,
+)
+def pair(file, names, output):
+    names = get_names(file, names)
+    pairings = random_pairings(names)
+    write_to_sheet(data=pairings, filename=file, sheet_name=output, columns=["A", "B"])
+
+@cli.command(help="Prints the list of sheets in the excel file")
+@click.option(
+    "--file", "-f",
+    prompt="(--file, -f)\tEnter the excel file name",
+    type=str,
+    help=f"""\b
+    Name of the file containing student info. 
+    Default: {EXCEL_FILE}
+    """,
+    default=f"{EXCEL_FILE}",
+    required=True
+)
+def sheets(file):
     print_blue("Name of sheets in excel workbook:")
-    df = pd.read_excel(filename, sheet_name=None)
+    df = pd.read_excel(file, sheet_name=None)
     print(list(df.keys()))
 
-def pair_students_into_sheet(sheet_name:str):
-    """
-    Wrapper for the functions that do the pairing
+@cli.command(help="Check for duplicates in a given list of sheets")
+@click.option(
+    "--file", "-f",
+    prompt="(--file, -f)\tEnter the excel file name",
+    type=str,
+    help=f"""\b
+    Name of the file containing student info. 
+    Default: {EXCEL_FILE}
+    """,
+    default=f"{EXCEL_FILE}",
+    required=True
+)
+@click.option(
+    "--list", "-l",
+    prompt="(--list, -l)\tEnter the list of sheets to check: ",
+    type = str,
+    help = """\b
+    List of sheets that need to be checked.
+    Enter the values as a single comma-separated string
+    """,
+    required=True,
+)
+def duplicates(file, list):
+    split_list = [item.strip() for item in list.split(",")]
+    check_duplicates(file, split_list)
 
-    Args:
-        sheet_name:
-            Name of sheet to be written into
-    
-    """
-    names = get_names(EXCEL_FILE, STUDENT_NAMES_SHEET)
-    pairings = random_pairings(names)
-    write_to_sheet(data=pairings, filename=EXCEL_FILE, sheet_name=sheet_name, columns=["A", "B"])
 
-def format_and_save_names():
-    formatted_names = reformat_names(EXCEL_FILE, RAW_DATA_SHEET, 65)
-    write_to_sheet(data=formatted_names, filename=EXCEL_FILE, sheet_name=STUDENT_NAMES_SHEET, columns=[f"{STUDENT_NAMES_SHEET}"])
+### END OF CLI RELATED STUFF
 
 if __name__ == "__main__":
-
-    # format_and_save_names()
-
-    # print_sheet_names(EXCEL_FILE)
-
-    # pair_students_into_sheet("Lab 4")
-
-    # check_duplicates(EXCEL_FILE, ["Lab 1", "Lab 2", "Lab 3", "Lab 4"])
+    try:
+        cli()
+    except Exception as exp:
+        print_red(str(exp))

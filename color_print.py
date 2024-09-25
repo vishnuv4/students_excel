@@ -26,3 +26,6 @@ def color(string:str, color:str) -> str:
 
 def print_blue(string:str) -> None:
     print(f"{color_dict['BLUE']} {string}")
+
+def print_red(string:str) -> None:
+    print(f"{color_dict['RED']} {string}")
