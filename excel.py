@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 from color_print import color, print_blue, print_red
 import click
+import os
 
-EXCEL_FILE = "students_list.xlsx"
-STUDENT_NAMES_SHEET = "Names"
-RAW_DATA_SHEET = "Raw"
+EXCEL_FILE = "students.xlsx"
+STUDENT_NAMES_SHEET = "NAMES"
+RAW_DATA_SHEET = "RAW"
 
 def write_to_sheet(data:any, filename:str, sheet_name:str, columns:list[str]):
     """
@@ -83,6 +84,10 @@ def get_names(filename:str, sheet_name:str) -> np.array:
             Sheet containing a single column (it should be the first one)
             of the student names
     """
+    excel_file = pd.ExcelFile(EXCEL_FILE)
+    if STUDENT_NAMES_SHEET not in excel_file.sheet_names:
+        raise NameError(f"The {EXCEL_FILE} file does not have a sheet named {STUDENT_NAMES_SHEET}\nEither create the sheet using the names command, or change the default at the top of {__file__}")
+
     print_blue(f"Reading the names of students from the {STUDENT_NAMES_SHEET} sheet...")
     df = pd.read_excel(filename, sheet_name=sheet_name)
     name_array = df.values
@@ -131,7 +136,7 @@ def check_duplicates(filename:str, sheet_list:list[str]):
 
     for sheet in sheet_list:
         if sheet not in list(data.keys()):
-            raise NameError(f"Invalid sheet name! {sheet} is not a sheet in the excel file", "RED")
+            raise NameError(f"Invalid sheet name! {sheet} is not a sheet in the excel file")
 
     for i in range(len(sheet_list)):
         for j in range(i+1, len(sheet_list)):
@@ -171,27 +176,6 @@ def cli():
 
 @cli.command(help="Format and save names in a new sheet")
 @click.option(
-    "--file", "-f",
-    prompt="(--file, -f)\tEnter the excel file name",
-    type=str,
-    help=f"""\b
-    Name of the file containing student info. 
-    Default: {EXCEL_FILE}
-    """,
-    default=f"{EXCEL_FILE}",
-    required=True
-)
-@click.option(
-    "--raw", "-r",
-    prompt="(--raw, -r)\tEnter the sheet containing raw data",
-    type=str,
-    help=f"""\b
-    Name of sheet containing raw data. 
-    Default: {RAW_DATA_SHEET}
-    """,
-    default=f"{RAW_DATA_SHEET}"
-)
-@click.option(
     "--output", "-o",
     prompt="(--output, -o)\tEnter the name of the sheet to write the names to",
     type=str,
@@ -205,92 +189,55 @@ def cli():
     help="Expected number of students, for validation purposes",
     required=True
 )
-def names(file, raw, output, num):
-    formatted_names = reformat_names(filename=file, sheet_name=raw, num_students=num)
-    write_to_sheet(data=formatted_names, filename=file, sheet_name=output, columns=[f"{output}"])
+def names(output, num):
+    formatted_names = reformat_names(filename=EXCEL_FILE, sheet_name=RAW_DATA_SHEET, num_students=num)
+    write_to_sheet(data=formatted_names, filename=EXCEL_FILE, sheet_name=output, columns=[f"{output}"])
 
 
 @cli.command(help="Pair students up randomly and save in a new sheet")
-@click.option(
-    "--file", "-f",
-    prompt="(--file, -f)\tEnter the excel file name",
-    type=str,
-    help=f"""\b
-    Name of the file containing student info. 
-    Default: {EXCEL_FILE}
-    """,
-    default=f"{EXCEL_FILE}",
-    required=True
-)
-@click.option(
-    "--names", "-n",
-    prompt="(--names, -n)\tEnter the name of the sheet with formatted names",
-    type=str,
-    help=f"""\b
-    Name of the sheet containing formatted student names. 
-    Default: {STUDENT_NAMES_SHEET}
-    """,
-    default=f"{STUDENT_NAMES_SHEET}"
-)
 @click.option(
     "--output", "-o",
     prompt="(--output, -o)\tEnter the sheet to save the pairing in",
     help="The sheet to save the pairing in",
     required=True,
 )
-def pair(file, names, output):
-    names = get_names(file, names)
+def pair(output):
+    names = get_names(EXCEL_FILE, STUDENT_NAMES_SHEET)
     pairings = random_pairings(names)
-    write_to_sheet(data=pairings, filename=file, sheet_name=output, columns=["A", "B"])
+    write_to_sheet(data=pairings, filename=EXCEL_FILE, sheet_name=output, columns=["A", "B"])
 
 @cli.command(help="Prints the list of sheets in the excel file")
-@click.option(
-    "--file", "-f",
-    prompt="(--file, -f)\tEnter the excel file name",
-    type=str,
-    help=f"""\b
-    Name of the file containing student info. 
-    Default: {EXCEL_FILE}
-    """,
-    default=f"{EXCEL_FILE}",
-    required=True
-)
-def sheets(file):
-    print_blue("Name of sheets in excel workbook:")
-    df = pd.read_excel(file, sheet_name=None)
+def sheets():
+    print_blue(f"List of sheets in {EXCEL_FILE}:")
+    df = pd.read_excel(EXCEL_FILE, sheet_name=None)
     print(list(df.keys()))
 
 @cli.command(help="Check for duplicates in a given list of sheets")
-@click.option(
-    "--file", "-f",
-    prompt="(--file, -f)\tEnter the excel file name",
-    type=str,
-    help=f"""\b
-    Name of the file containing student info. 
-    Default: {EXCEL_FILE}
-    """,
-    default=f"{EXCEL_FILE}",
-    required=True
-)
-@click.option(
-    "--list", "-l",
-    prompt="(--list, -l)\tEnter the list of sheets to check: ",
-    type = str,
-    help = """\b
-    List of sheets that need to be checked.
-    Enter the values as a single comma-separated string
-    """,
-    required=True,
-)
-def duplicates(file, list):
-    split_list = [item.strip() for item in list.split(",")]
-    check_duplicates(file, split_list)
+@click.argument("sheets", nargs=-1)
+def duplicates(sheets):
+    final_list = []
+    for item in sheets:
+        final_list.extend([s.strip() for s in item.split(",")])
 
+    check_duplicates(EXCEL_FILE, final_list)
 
 ### END OF CLI RELATED STUFF
 
 if __name__ == "__main__":
+
+
     try:
+
+        # Validation - check if excel file exists
+        if not os.path.isfile(EXCEL_FILE):
+            raise FileNotFoundError(f"Excel workbook with the name {EXCEL_FILE} not found.\nEither create the file or change the default at the top of {__file__}")
+
+        # Validation - check if the excel file has a sheet with the right default name for raw data
+        excel_file = pd.ExcelFile(EXCEL_FILE)
+        if RAW_DATA_SHEET not in excel_file.sheet_names:
+            raise NameError(f"The {EXCEL_FILE} file does not have a sheet named {RAW_DATA_SHEET}\nEither create the file or change the default at the top of {__file__}")
+
         cli()
+
     except Exception as exp:
         print_red(str(exp))
